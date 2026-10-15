@@ -1,0 +1,184 @@
+// NavTracker database schema
+// SQLite does not support enums, so "enum-like" fields are plain strings
+// and are validated in src/lib/validation.ts with zod.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Single-row table (id = 1) holding your personal preferences.
+model Settings {
+  id                 Int      @id @default(1)
+  name               String   @default("Navinesh")
+  dailyTargetMinutes Int      @default(240)
+  dailyLimitMinutes  Int      @default(480)
+  streakMinMinutes   Int      @default(30)
+  dailyDsaTarget     Int      @default(2)
+  workingDays        String   @default("1,2,3,4,5,6") // 0 = Sunday ... 6 = Saturday (derived from dayTargets)
+  dayTargets         String   @default("") // minutes per weekday, Sun..Sat, e.g. "390,210,210,210,210,60,390"
+  planStartDate      DateTime @default(now())
+  planWeeks          Int      @default(12)
+  mainGoal           String   @default("Land a full-stack developer role")
+  theme              String   @default("system") // light | dark | system
+  accent             String   @default("violet") // violet | blue | pink | emerald | orange
+  updatedAt          DateTime @updatedAt
+}
+
+model Goal {
+  id          Int       @id @default(autoincrement())
+  title       String
+  description String?
+  timeframe   String    // YEARLY | MONTHLY | WEEKLY | DAILY
+  category    String    @default("General")
+  priority    String    @default("MEDIUM") // LOW | MEDIUM | HIGH | URGENT
+  status      String    @default("ACTIVE") // ACTIVE | COMPLETED | ARCHIVED
+  deadline    DateTime?
+  completedAt DateTime?
+  parentId    Int?
+  parent      Goal?     @relation("GoalTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children    Goal[]    @relation("GoalTree")
+  tasks       Task[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Task {
+  id               Int       @id @default(autoincrement())
+  title            String
+  notes            String?
+  priority         String    @default("MEDIUM")
+  estimatedMinutes Int       @default(30)
+  actualMinutes    Int?      // time it really took (logged when completing)
+  loggedSessionId  Int?      // study session auto-created on completion (removed if un-completed)
+  deadline         DateTime?
+  completed        Boolean   @default(false)
+  completedAt      DateTime?
+  goalId           Int?
+  goal             Goal?     @relation(fields: [goalId], references: [id], onDelete: SetNull)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+}
+
+model StudySession {
+  id        Int      @id @default(autoincrement())
+  date      DateTime
+  minutes   Int
+  topic     String
+  notes     String?
+  focus     Int      @default(4) // 1-5 self rating
+  skillId   Int?
+  skill     Skill?   @relation(fields: [skillId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+}
+
+model DsaProblem {
+  id              Int       @id @default(autoincrement())
+  title           String
+  url             String?
+  platform        String    @default("LeetCode")
+  topic           String
+  difficulty      String    // EASY | MEDIUM | HARD
+  status          String    @default("SOLVED") // TODO | SOLVED | ATTEMPTED | REVISIT
+  language        String    @default("TypeScript")
+  code            String?
+  approach        String?
+  timeComplexity  String?
+  spaceComplexity String?
+  starred         Boolean   @default(false)
+  solvedAt        DateTime  @default(now())
+  nextRevision    DateTime?
+  revisionCount   Int       @default(0)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+model Skill {
+  id          Int                 @id @default(autoincrement())
+  name        String              @unique
+  category    String              @default("Frontend")
+  level       Int                 @default(0) // 0-100 self-assessed
+  color       String              @default("violet")
+  description String?
+  notes       String?
+  isCustom    Boolean             @default(false)
+  sortOrder   Int                 @default(0)
+  checklist   ChecklistItem[]
+  questions   InterviewQuestion[]
+  sessions    StudySession[]
+  topicNotes  Note[]
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+}
+
+model ChecklistItem {
+  id        Int      @id @default(autoincrement())
+  text      String
+  done      Boolean  @default(false)
+  sortOrder Int      @default(0)
+  skillId   Int
+  skill     Skill    @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+}
+
+model InterviewQuestion {
+  id           Int       @id @default(autoincrement())
+  question     String
+  answer       String?
+  difficulty   String    @default("MEDIUM")
+  confidence   Int       @default(2) // 1-5
+  lastReviewed DateTime?
+  skillId      Int?
+  skill        Skill?    @relation(fields: [skillId], references: [id], onDelete: SetNull)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model Note {
+  id          Int      @id @default(autoincrement())
+  title       String
+  content     String
+  topic       String   @default("General")
+  tags        String   @default("") // comma separated
+  pinned      Boolean  @default(false)
+  isInterview Boolean  @default(false)
+  skillId     Int?
+  skill       Skill?   @relation(fields: [skillId], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Reward {
+  id          Int       @id @default(autoincrement())
+  title       String
+  emoji       String    @default("🎁")
+  description String?
+  targetXp    Int
+  sortOrder   Int       @default(0)
+  claimedAt   DateTime?
+  createdAt   DateTime  @default(now())
+}
+
+// Job search pipeline (applications start in week 6 of the plan)
+model JobApplication {
+  id           Int       @id @default(autoincrement())
+  company      String
+  role         String    @default("Full Stack Developer (MERN)")
+  companyType  String    @default("STARTUP") // SERVICE | STARTUP | PRODUCT
+  channel      String    @default("LinkedIn") // Referral | LinkedIn | Naukri | Instahyre | Wellfound | Cutshort | Career page | Other
+  status       String    @default("APPLIED") // WISHLIST | APPLIED | INTERVIEWING | OFFER | REJECTED | WITHDRAWN
+  link         String?
+  contact      String?
+  expectedLpa  Float?
+  offeredLpa   Float?
+  appliedAt    DateTime  @default(now())
+  nextStep     String?
+  nextStepDate DateTime?
+  notes        String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
